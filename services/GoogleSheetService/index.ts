@@ -13,7 +13,32 @@ try {
   console.warn('Warning: googleapis or google-auth-library not installed. Falling back to local google-sheet.md file.');
 }
 
-import credentials from "./credentials.json";
+let credentials = {
+  client_email: undefined as string | undefined,
+  private_key: undefined as string | undefined,
+};
+
+if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+  credentials = {
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  };
+} else {
+  try {
+    const credsPath = path.join(process.cwd(), 'services', 'GoogleSheetService', 'credentials.json');
+    if (fs.existsSync(credsPath)) {
+      const fileContent = fs.readFileSync(credsPath, 'utf8');
+      const json = JSON.parse(fileContent);
+      credentials = {
+        client_email: json.client_email,
+        private_key: json.private_key,
+      };
+    }
+  } catch (error) {
+    console.warn('Warning: credentials.json not found or could not be read, and environment variables are not set.');
+  }
+}
+
 
 export interface ParsedSheetRow {
   year: string;
