@@ -148,7 +148,61 @@ export default function Home() {
             </div>
           </Link>
 
-          {/* Card 5: H2H Histórico Cruzado */}
+          {/* Card 5: Tabla Histórica General H2H */}
+          <Link
+            href="/standings"
+            className="group relative bg-slate-950/40 hover:bg-slate-950/80 border border-slate-800 hover:border-emerald-500/50 p-6 rounded-2xl transition-all duration-300 hover:shadow-[0_0_30px_-5px_rgba(16,185,129,0.15)] flex flex-col justify-between min-h-45 overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-2xl group-hover:bg-emerald-500/10 transition-all duration-300" />
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-3xl p-2.5 bg-slate-900 border border-slate-800 rounded-xl group-hover:border-emerald-500/30 transition-colors">
+                  🌐
+                </span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-950/50 border border-emerald-900/50 text-emerald-400">
+                  Global
+                </span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2 group-hover:text-emerald-400 transition-colors">
+                Tabla Histórica H2H (Global)
+              </h3>
+              <p className="text-sm text-slate-400">
+                Tabla de posiciones con todos los clubes donde cada enfrentamiento directo es un duelo y las victorias actúan como goles.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 mt-4 group-hover:translate-x-1 transition-transform">
+              Ver Tabla General <span>→</span>
+            </div>
+          </Link>
+
+          {/* Card 6: Tabla H2H Personalizada */}
+          <Link
+            href="/standings/custom"
+            className="group relative bg-slate-950/40 hover:bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 p-6 rounded-2xl transition-all duration-300 hover:shadow-[0_0_30px_-5px_rgba(99,102,241,0.15)] flex flex-col justify-between min-h-45 overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl group-hover:bg-indigo-500/10 transition-all duration-300" />
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-3xl p-2.5 bg-slate-900 border border-slate-800 rounded-xl group-hover:border-indigo-500/30 transition-colors">
+                  🎯
+                </span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-950/50 border border-indigo-900/50 text-indigo-400">
+                  Personalizada
+                </span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2 group-hover:text-indigo-400 transition-colors">
+                Tabla H2H Personalizada
+              </h3>
+              <p className="text-sm text-slate-400">
+                Selecciona tus clubes favoritos para computar su mini-liga histórica directa, matriz de cruces y desglose de series.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 mt-4 group-hover:translate-x-1 transition-transform">
+              Armar Tabla <span>→</span>
+            </div>
+          </Link>
+
+          {/* Card 7: H2H Histórico Cruzado */}
           <Link
             href="/historic"
             className="group relative bg-slate-950/40 hover:bg-slate-950/80 border border-slate-800 hover:border-pink-500/50 p-6 rounded-2xl transition-all duration-300 hover:shadow-[0_0_30px_-5px_rgba(236,72,153,0.15)] flex flex-col justify-between min-h-45 overflow-hidden md:col-span-2"
