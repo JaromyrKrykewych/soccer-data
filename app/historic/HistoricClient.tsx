@@ -2,6 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  exportLeagueFixtureToXlsx,
+  generateSingleRoundRobinFixture,
+} from '../../business/leagueFixture';
 
 export interface TeamInfo {
   id: number;
@@ -43,10 +47,12 @@ interface HistoricClientProps {
 export default function HistoricClient({ teams, initialMatches }: HistoricClientProps) {
   // State for selected teams
   const [selectedTeams, setSelectedTeams] = useState<TeamInfo[]>([]);
+  // State for the current matrix file name
+  const [matrixName, setMatrixName] = useState('');
   // State to track if localStorage has been initialized to avoid overwriting on first render
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load stored teams on mount
+  // Load stored teams and matrix name on mount
   useEffect(() => {
     const stored = localStorage.getItem('historic_selected_teams');
     if (stored) {
@@ -60,16 +66,21 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
         console.error("Error reading stored teams from localStorage:", e);
       }
     }
+    const storedName = localStorage.getItem('historic_matrix_name');
+    if (storedName) {
+      setMatrixName(storedName);
+    }
     setIsLoaded(true);
   }, [teams]);
 
-  // Save selection changes to localStorage
+  // Save selection and matrix name changes to localStorage
   useEffect(() => {
     if (isLoaded) {
       const ids = selectedTeams.map((t) => t.id);
       localStorage.setItem('historic_selected_teams', JSON.stringify(ids));
+      localStorage.setItem('historic_matrix_name', matrixName);
     }
-  }, [selectedTeams, isLoaded]);
+  }, [selectedTeams, matrixName, isLoaded]);
 
   // Drag and Drop states for reordering
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -103,6 +114,14 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
   } | null>(null);
   // State for H2H perspective tabs ('general', 'teamA' local, 'teamB' local)
   const [h2hTab, setH2hTab] = useState<'general' | 'teamA' | 'teamB'>('general');
+  // State for random match picker inside H2H details
+  const [randomMatch, setRandomMatch] = useState<{
+    match: MatchRow;
+    mode: 'general' | 'teamA' | 'teamB';
+    rollCount: number;
+  } | null>(null);
+  // State while generating/downloading league fixture .xlsx
+  const [isExportingFixture, setIsExportingFixture] = useState(false);
   // State for search filter of common rivals table
   const [rivalSearchTerm, setRivalSearchTerm] = useState('');
   // State for rivals table page size / display count
@@ -175,18 +194,22 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
     setSearchTerm('');
     setIsDropdownOpen(false);
     setActiveH2H(null); // Reset H2H detail view
+    setRandomMatch(null);
   };
 
   // Method to remove team from selection
   const handleRemoveTeam = (id: number) => {
     setSelectedTeams(selectedTeams.filter((t) => t.id !== id));
     setActiveH2H(null); // Reset H2H detail view
+    setRandomMatch(null);
   };
 
   // Clear all selections
   const handleClearAll = () => {
     setSelectedTeams([]);
+    setMatrixName('');
     setActiveH2H(null);
+    setRandomMatch(null);
     setSearchTerm('');
     setIsDropdownOpen(false);
   };
@@ -194,10 +217,19 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
   // Export selected teams list to a JSON file
   const handleExportTeams = () => {
     if (selectedTeams.length === 0) return;
+    const dateStr = new Date().toISOString().split('T')[0];
+    const cleanName = matrixName
+      .trim()
+      .replace(/\.json$/i, '')
+      .replace(/[<>:"/\\|?*]+/g, '-')
+      .trim();
+    const finalFileName = cleanName || `matrix-equipos-${selectedTeams.length}-${dateStr}`;
+
     const teamIds = selectedTeams.map((t) => t.id);
     const exportData = {
       version: 1,
       type: "soccer-matrix",
+      name: finalFileName,
       teamIds: teamIds,
       teamNames: selectedTeams.map((t) => t.current_name)
     };
@@ -206,13 +238,44 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    
-    const dateStr = new Date().toISOString().split('T')[0];
-    link.download = `matrix-equipos-${selectedTeams.length}-${dateStr}.json`;
+    link.download = `${finalFileName}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  // Generate single round-robin league fixture (pushing NO PJ to last rounds) and export to .xlsx
+  const handleExportLeagueFixture = async () => {
+    if (selectedTeams.length < 2 || isExportingFixture) return;
+    setIsExportingFixture(true);
+    try {
+      const fixture = generateSingleRoundRobinFixture(selectedTeams, h2hMatchesDict);
+      const dateStr = new Date().toISOString().split('T')[0];
+      const cleanName = matrixName
+        .trim()
+        .replace(/\.json$/i, '')
+        .replace(/[<>:"/\\|?*]+/g, '-')
+        .trim();
+      const fileNameBase = cleanName
+        ? `fixture-${cleanName}`
+        : `fixture-liga-${selectedTeams.length}-${dateStr}`;
+
+      await exportLeagueFixtureToXlsx(selectedTeams, fixture, fileNameBase);
+
+      const noH2hNote =
+        fixture.totalNoH2hMatches > 0 && fixture.firstNoH2hRound !== null
+          ? `\nPartidos sin H2H: ${fixture.totalNoH2hMatches} (concentrados desde la jornada ${fixture.firstNoH2hRound} en adelante).`
+          : '\n¡Todos los partidos tienen historial H2H!';
+      alert(
+        `Fixture exportado con éxito (${fixture.rounds.length} jornadas, ${fixture.totalMatches} partidos).${noH2hNote}`
+      );
+    } catch (err) {
+      console.error('Error al exportar fixture a Excel:', err);
+      alert('Ocurrió un error al generar el archivo Excel del fixture.');
+    } finally {
+      setIsExportingFixture(false);
+    }
   };
 
   // Import team selection from a JSON file
@@ -255,8 +318,11 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
           return;
         }
 
+        const importedFileName = file.name.replace(/\.json$/i, '');
         setSelectedTeams(restored);
+        setMatrixName(importedFileName);
         setActiveH2H(null);
+        setRandomMatch(null);
         alert(`Se cargaron con éxito ${restored.length} equipos.`);
       } catch (err) {
         console.error("Error al importar equipos:", err);
@@ -295,11 +361,35 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
 
     setActiveH2H({ teamA, teamB, matches });
     setH2hTab('general');
+    setRandomMatch(null);
 
     // Scroll to details section smoothly after render
     setTimeout(() => {
       detailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
+  };
+
+  // Pick a random match from the active H2H based on venue mode
+  const handlePickRandomMatch = (mode: 'general' | 'teamA' | 'teamB') => {
+    if (!activeH2H) return;
+    let pool = activeH2H.matches;
+    if (mode === 'teamA') {
+      pool = activeH2H.matches.filter(
+        (m) => m.home_team_id === activeH2H.teamA.id && !m.is_neutral
+      );
+    } else if (mode === 'teamB') {
+      pool = activeH2H.matches.filter(
+        (m) => m.home_team_id === activeH2H.teamB.id && !m.is_neutral
+      );
+    }
+
+    if (pool.length === 0) return;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    setRandomMatch((prev) => ({
+      match: picked,
+      mode,
+      rollCount: (prev?.rollCount ?? 0) + 1,
+    }));
   };
 
   // Calculate detailed summary stats for selected H2H
@@ -646,7 +736,27 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
 
               <div className="mt-4 flex justify-between items-center gap-2 flex-wrap border-t border-slate-800/40 pt-4">
                 {/* Import / Export controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={matrixName}
+                      onChange={(e) => setMatrixName(e.target.value)}
+                      placeholder="Nombre del archivo..."
+                      title="Nombre del archivo JSON (opcional; si queda vacío se usa el nombre automático)"
+                      className="bg-slate-900 border border-slate-800 text-slate-200 placeholder:text-slate-600 rounded-lg pl-3 pr-7 py-1.5 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-pink-500/30 transition-all"
+                    />
+                    {matrixName && (
+                      <button
+                        type="button"
+                        onClick={() => setMatrixName('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-[10px] cursor-pointer"
+                        title="Borrar nombre"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="file"
                     id="import-teams-file"
@@ -672,6 +782,19 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
                     title="Descargar la lista actual de equipos en un archivo JSON"
                   >
                     📤 Guardar Matrix
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportLeagueFixture}
+                    disabled={selectedTeams.length < 2 || isExportingFixture}
+                    className={`text-xs px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1 ${
+                      selectedTeams.length < 2 || isExportingFixture
+                        ? 'bg-slate-900/50 text-slate-600 border border-slate-800 cursor-not-allowed'
+                        : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 cursor-pointer'
+                    }`}
+                    title="Generar fixture de liga (1 vuelta, sin H2H al final) y exportar a Excel (.xlsx)"
+                  >
+                    {isExportingFixture ? '⏳ Generando...' : '🏆 Exportar Fixture (.xlsx)'}
                   </button>
                 </div>
 
@@ -819,11 +942,139 @@ export default function HistoricClient({ teams, initialMatches }: HistoricClient
                 </h3>
               </div>
               <button
-                onClick={() => setActiveH2H(null)}
+                onClick={() => {
+                  setActiveH2H(null);
+                  setRandomMatch(null);
+                }}
                 className="text-xs bg-slate-900 hover:bg-slate-800 border border-slate-850 hover:border-slate-700 px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
                 ✕ Cerrar Detalle
               </button>
+            </div>
+
+            {/* Random Match Generator */}
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-6">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div>
+                  <span className="text-slate-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🎲</span> Partido al Azar
+                  </span>
+                  <p className="text-slate-500 text-xs mt-0.5">
+                    Sortea un resultado histórico real entre estos clubes para ligas custom.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePickRandomMatch('general')}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 border border-pink-500/30 flex items-center gap-1.5"
+                    title="Sortear entre todos los partidos del historial"
+                  >
+                    <span>🎲</span> Todos ({activeH2HStats.total})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePickRandomMatch('teamA')}
+                    disabled={activeH2HStats.aHome.total === 0}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border ${
+                      activeH2HStats.aHome.total === 0
+                        ? 'bg-slate-900/40 text-slate-600 border-slate-800 cursor-not-allowed'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer'
+                    }`}
+                    title={`Sortear un partido con ${activeH2H.teamA.current_name} como local`}
+                  >
+                    <span>🏠</span> {activeH2H.teamA.current_name} Local ({activeH2HStats.aHome.total})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePickRandomMatch('teamB')}
+                    disabled={activeH2HStats.bHome.total === 0}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border ${
+                      activeH2HStats.bHome.total === 0
+                        ? 'bg-slate-900/40 text-slate-600 border-slate-800 cursor-not-allowed'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer'
+                    }`}
+                    title={`Sortear un partido con ${activeH2H.teamB.current_name} como local`}
+                  >
+                    <span>🏠</span> {activeH2H.teamB.current_name} Local ({activeH2HStats.bHome.total})
+                  </button>
+                </div>
+              </div>
+
+              {randomMatch && (() => {
+                const m = randomMatch.match;
+                const homeTeamName = teamsMap.get(m.home_team_id)?.current_name || `Club #${m.home_team_id}`;
+                const awayTeamName = teamsMap.get(m.away_team_id)?.current_name || `Club #${m.away_team_id}`;
+                const formattedSeason = m.seasons
+                  ? `${m.seasons.year_start}-${String(m.seasons.year_end).slice(-2)}`
+                  : 'N/A';
+                const modeLabel =
+                  randomMatch.mode === 'general'
+                    ? 'Todos los partidos'
+                    : randomMatch.mode === 'teamA'
+                      ? `${activeH2H.teamA.current_name} Local`
+                      : `${activeH2H.teamB.current_name} Local`;
+
+                return (
+                  <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-950/70 rounded-lg p-4 border border-pink-500/20">
+                    <div className="flex flex-col items-center md:items-start gap-1">
+                      <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-pink-500/15 text-pink-300 border border-pink-500/30">
+                          Sorteo #{randomMatch.rollCount} • {modeLabel}
+                        </span>
+                        <span className="text-xs font-mono text-slate-400">{formattedSeason}</span>
+                        <span className="text-xs text-slate-500">•</span>
+                        <span className="text-xs text-slate-300 font-medium">
+                          {m.seasons?.competitions?.name || 'Desconocido'}
+                        </span>
+                        <span className="text-xs text-slate-500">({m.round})</span>
+                        {m.is_neutral && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-950 border border-indigo-900 text-indigo-400 font-medium">
+                            Neutral
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-sm sm:text-base">
+                      <span className={`text-right ${m.home_goals > m.away_goals ? 'font-bold text-white' : 'text-slate-300'}`}>
+                        {homeTeamName}
+                      </span>
+                      <span className="bg-slate-900 px-3.5 py-1.5 rounded-lg text-white font-bold font-mono border border-pink-500/40 shadow-inner text-center">
+                        {m.home_goals} - {m.away_goals}
+                        {m.penalty_home_goals !== null && (
+                          <span className="text-[10px] text-pink-400 block leading-tight mt-0.5">
+                            ({m.penalty_home_goals}-{m.penalty_away_goals} pen)
+                          </span>
+                        )}
+                      </span>
+                      <span className={`${m.away_goals > m.home_goals ? 'font-bold text-white' : 'text-slate-300'}`}>
+                        {awayTeamName}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePickRandomMatch(randomMatch.mode)}
+                        className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1.5 rounded-lg transition font-medium cursor-pointer"
+                        title="Volver a sortear con el mismo criterio"
+                      >
+                        🔄 Repetir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRandomMatch(null)}
+                        className="text-xs bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 px-2 py-1.5 rounded-lg transition cursor-pointer"
+                        title="Ocultar resultado sorteado"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* H2H Tabs / Tags Selector */}
